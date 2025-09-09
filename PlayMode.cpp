@@ -115,6 +115,12 @@ PlayMode::PlayMode() : scene(*garden_scene)
 			wing_right = &transform;
 		else if (transform.name == "bird_root")
 			bird_root = &transform;
+		else if (transform.name.find("flower") != std::string::npos) {
+			Flower f;
+			f.root = &transform;
+			f.pollinated = false;
+			flowers.push_back(f);
+		}
 	}
 
 	if (wing_left == nullptr)
@@ -212,15 +218,13 @@ void PlayMode::update(float elapsed)
 {
 	if (space.pressed)
 	{
-		float grow_distance = 4.0f;
-		for (auto &transform : scene.transforms)
-		{
-			if (transform.name.find("flower") != std::string::npos)
-			{
-				float dist = glm::distance(transform.position, bird_root->position);
-				if (dist < grow_distance)
-				{
-					transform.scale = glm::vec3(2.f, 2.f, 1.2f); // grow flower
+		float grow_distance = 5.0f;
+		for (auto &flower : flowers) {
+			if (!flower.pollinated) {
+				float dist = glm::distance(flower.root->position, bird_root->position);
+				if (dist < grow_distance) {
+					flower.root->scale = glm::vec3(2.f, 2.f, 1.2f); // grow flower
+					flower.pollinated = true;
 				}
 			}
 		}
@@ -293,12 +297,20 @@ void PlayMode::draw(glm::uvec2 const &drawable_size)
 			0.0f, 0.0f, 0.0f, 1.0f));
 
 		constexpr float H = 0.09f;
-		lines.draw_text("Use WASD to move bird, press space to pollinate nearby flowers!",
+		int num_pollinated = 0;
+		for (const auto& flower : flowers) {
+			if (flower.pollinated) num_pollinated++;
+		}
+		std::string text = "Use WASD to move Fauna, press space to pollinate nearby flowers! Pollinated: " + std::to_string(num_pollinated) + "/ 10";
+		if (num_pollinated == 10) {
+			text = "Yay Fauna! You pollinated all the flowers :D";
+		}
+		lines.draw_text(text,
 						glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
 						glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 						glm::u8vec4(0x00, 0x00, 0x00, 0x00));
 		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Use WASD to move bird, press space to pollinate nearby flowers!",
+		lines.draw_text(text,
 						glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + 0.1f * H + ofs, 0.0),
 						glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
 						glm::u8vec4(0xff, 0xff, 0xff, 0x00));

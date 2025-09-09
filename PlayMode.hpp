@@ -10,8 +10,9 @@
 
 
 struct Flower {
-    Scene::Transform* root = nullptr;
-    Scene::Drawable*  draw = nullptr;
+	Scene::Transform* root = nullptr;
+	Scene::Drawable*  draw = nullptr;
+	bool pollinated = false;
 };
 
 struct PlayMode : Mode
