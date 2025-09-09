@@ -1,3 +1,4 @@
+#include <set>
 #include "PlayMode.hpp"
 
 #include "LitColorTextureProgram.hpp"
@@ -12,106 +13,194 @@
 
 #include <random>
 
-GLuint hexapod_meshes_for_lit_color_texture_program = 0;
-Load< MeshBuffer > hexapod_meshes(LoadTagDefault, []() -> MeshBuffer const * {
-	MeshBuffer const *ret = new MeshBuffer(data_path("hexapod.pnct"));
-	hexapod_meshes_for_lit_color_texture_program = ret->make_vao_for_program(lit_color_texture_program->program);
-	return ret;
-});
+GLuint bird_vao_for_lit = 0;
+Load<MeshBuffer> bird_meshes(LoadTagDefault, []() -> MeshBuffer const *
+							 {
+	MeshBuffer const *ret = new MeshBuffer(data_path("bird.pnct"));
+	bird_vao_for_lit = ret->make_vao_for_program(lit_color_texture_program->program);
+	return ret; });
 
-Load< Scene > hexapod_scene(LoadTagDefault, []() -> Scene const * {
-	return new Scene(data_path("hexapod.scene"), [&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
-		Mesh const &mesh = hexapod_meshes->lookup(mesh_name);
+GLuint flower_vao_for_lit = 0;
+Load<MeshBuffer> flower_meshes(LoadTagDefault, []() -> MeshBuffer const *
+							   {
+	MeshBuffer const *ret = new MeshBuffer(data_path("flower.pnct"));
+	flower_vao_for_lit = ret->make_vao_for_program(lit_color_texture_program->program);
+	return ret; });
 
-		scene.drawables.emplace_back(transform);
-		Scene::Drawable &drawable = scene.drawables.back();
+GLuint ground_vao_for_lit = 0;
+Load<MeshBuffer> ground_meshes(LoadTagDefault, []() -> MeshBuffer const *
+							   {
+	MeshBuffer const *ret = new MeshBuffer(data_path("ground.pnct"));
+	ground_vao_for_lit = ret->make_vao_for_program(lit_color_texture_program->program);
+	return ret; });
 
-		drawable.pipeline = lit_color_texture_program_pipeline;
+Load<Scene> garden_scene(LoadTagDefault, []() -> Scene const *
+						 {
+	Scene *garden = new Scene();
 
-		drawable.pipeline.vao = hexapod_meshes_for_lit_color_texture_program;
-		drawable.pipeline.type = mesh.type;
-		drawable.pipeline.start = mesh.start;
-		drawable.pipeline.count = mesh.count;
+	auto load_scene = [&](const char* scene_path,
+									 MeshBuffer const* buf, GLuint vao) {
+		garden->load(data_path(scene_path),
+			[&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
+				Mesh const &mesh = buf->lookup(mesh_name);
 
-	});
-});
+				scene.drawables.emplace_back(transform);
+				Scene::Drawable &drawable = scene.drawables.back();
+				
+				drawable.pipeline = lit_color_texture_program_pipeline;
+				
+				drawable.pipeline.vao   = vao;
+				drawable.pipeline.type  = mesh.type;
+				drawable.pipeline.start = mesh.start;
+				drawable.pipeline.count = mesh.count;
+			}
+		);
+	};
+	
+			
+	auto load_flower = [&](glm::vec3 pos, float yaw_rad, float scale = 1.0f) {
+		size_t t0 = garden->transforms.size();
 
-PlayMode::PlayMode() : scene(*hexapod_scene) {
-	//get pointers to leg for convenience:
-	for (auto &transform : scene.transforms) {
-		if (transform.name == "Hip.FL") hip = &transform;
-		else if (transform.name == "UpperLeg.FL") upper_leg = &transform;
-		else if (transform.name == "LowerLeg.FL") lower_leg = &transform;
+		garden->load(data_path("flower.scene"),
+			[&](Scene &scene, Scene::Transform *transform, std::string const &mesh_name){
+				Mesh const &mesh = (&*flower_meshes)->lookup(mesh_name);
+
+				scene.drawables.emplace_back(transform);
+				Scene::Drawable &drawable = garden->drawables.back();
+				
+				drawable.pipeline = lit_color_texture_program_pipeline;
+				
+				drawable.pipeline.vao   = flower_vao_for_lit;
+				drawable.pipeline.type  = mesh.type;
+				drawable.pipeline.start = mesh.start;
+				drawable.pipeline.count = mesh.count;
+			}
+		);
+		glm::quat R = glm::angleAxis(yaw_rad, glm::vec3(0,1,0));
+
+		auto it = garden->transforms.begin();
+		std::advance(it, t0);
+		for (; it != garden->transforms.end(); ++it) {
+			Scene::Transform &transform = *it;
+			transform.position = R * transform.position + pos;
+		}
+	};
+
+	// Example from stack overflow 
+	// https://stackoverflow.com/questions/76745282/c-mt19937-getting-the-same-sequence-multiple-times
+	{
+		std::mt19937 gen(123); 
+		std::uniform_real_distribution<float> x_pos(-10.0f, 10.0f);
+		std::uniform_real_distribution<float> y_pos(-10.0f, 10.0f);
+
+		const int num_flowers = 10;
+		for (int i = 0; i < num_flowers; ++i) {
+			load_flower(glm::vec3(x_pos(gen), y_pos(gen), 0.0f), 0.0f, 1.0f);
+		}
 	}
-	if (hip == nullptr) throw std::runtime_error("Hip not found.");
-	if (upper_leg == nullptr) throw std::runtime_error("Upper leg not found.");
-	if (lower_leg == nullptr) throw std::runtime_error("Lower leg not found.");
 
-	hip_base_rotation = hip->rotation;
-	upper_leg_base_rotation = upper_leg->rotation;
-	lower_leg_base_rotation = lower_leg->rotation;
+	load_scene("bird.scene",   &*bird_meshes,   bird_vao_for_lit);
+	load_scene("ground.scene", &*ground_meshes, ground_vao_for_lit);
 
-	//get pointer to camera for convenience:
-	if (scene.cameras.size() != 1) throw std::runtime_error("Expecting scene to have exactly one camera, but it has " + std::to_string(scene.cameras.size()));
+	return garden; });
+
+PlayMode::PlayMode() : scene(*garden_scene)
+{
+	// INIT TRANSFORMS
+	for (auto &transform : scene.transforms)
+	{
+		if (transform.name == "wing_left")
+			wing_left = &transform;
+		else if (transform.name == "wing_right")
+			wing_right = &transform;
+		else if (transform.name == "bird_root")
+			bird_root = &transform;
+	}
+
+	if (wing_left == nullptr)
+		throw std::runtime_error("wing_left not found.");
+	if (wing_right == nullptr)
+		throw std::runtime_error("wing_right not found.");
+	if (bird_root == nullptr)
+		throw std::runtime_error("bird_root not found.");
+
+	wing_left_rotation = wing_left->rotation;
+	wing_right_rotation = wing_right->rotation;
+
+	if (scene.cameras.size() != 1)
+		throw std::runtime_error("Scene should have ONE camera");
 	camera = &scene.cameras.front();
 }
 
-PlayMode::~PlayMode() {
+PlayMode::~PlayMode()
+{
 }
 
-bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size) {
-
-	if (evt.type == SDL_EVENT_KEY_DOWN) {
-		if (evt.key.key == SDLK_ESCAPE) {
+bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
+{
+	if (evt.type == SDL_EVENT_KEY_DOWN)
+	{
+		if (evt.key.key == SDLK_ESCAPE)
+		{
 			SDL_SetWindowRelativeMouseMode(Mode::window, false);
 			return true;
-		} else if (evt.key.key == SDLK_A) {
+		}
+		else if (evt.key.key == SDLK_A)
+		{
 			left.downs += 1;
 			left.pressed = true;
 			return true;
-		} else if (evt.key.key == SDLK_D) {
+		}
+		else if (evt.key.key == SDLK_D)
+		{
 			right.downs += 1;
 			right.pressed = true;
 			return true;
-		} else if (evt.key.key == SDLK_W) {
+		}
+		else if (evt.key.key == SDLK_W)
+		{
 			up.downs += 1;
 			up.pressed = true;
 			return true;
-		} else if (evt.key.key == SDLK_S) {
+		}
+		else if (evt.key.key == SDLK_S)
+		{
 			down.downs += 1;
 			down.pressed = true;
 			return true;
 		}
-	} else if (evt.type == SDL_EVENT_KEY_UP) {
-		if (evt.key.key == SDLK_A) {
+		else if (evt.key.key == SDLK_SPACE)
+		{
+			space.downs += 1;
+			space.pressed = true;
+			return true;
+		}
+	}
+	else if (evt.type == SDL_EVENT_KEY_UP)
+	{
+		if (evt.key.key == SDLK_A)
+		{
 			left.pressed = false;
 			return true;
-		} else if (evt.key.key == SDLK_D) {
+		}
+		else if (evt.key.key == SDLK_D)
+		{
 			right.pressed = false;
 			return true;
-		} else if (evt.key.key == SDLK_W) {
+		}
+		else if (evt.key.key == SDLK_W)
+		{
 			up.pressed = false;
 			return true;
-		} else if (evt.key.key == SDLK_S) {
+		}
+		else if (evt.key.key == SDLK_S)
+		{
 			down.pressed = false;
 			return true;
 		}
-	} else if (evt.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-		if (SDL_GetWindowRelativeMouseMode(Mode::window) == false) {
-			SDL_SetWindowRelativeMouseMode(Mode::window, true);
-			return true;
-		}
-	} else if (evt.type == SDL_EVENT_MOUSE_MOTION) {
-		if (SDL_GetWindowRelativeMouseMode(Mode::window) == true) {
-			glm::vec2 motion = glm::vec2(
-				evt.motion.xrel / float(window_size.y),
-				-evt.motion.yrel / float(window_size.y)
-			);
-			camera->transform->rotation = glm::normalize(
-				camera->transform->rotation
-				* glm::angleAxis(-motion.x * camera->fovy, glm::vec3(0.0f, 1.0f, 0.0f))
-				* glm::angleAxis(motion.y * camera->fovy, glm::vec3(1.0f, 0.0f, 0.0f))
-			);
+		else if (evt.key.key == SDLK_SPACE)
+		{
+			space.pressed = false;
 			return true;
 		}
 	}
@@ -119,96 +208,99 @@ bool PlayMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 	return false;
 }
 
-void PlayMode::update(float elapsed) {
-
-	//slowly rotates through [0,1):
-	wobble += elapsed / 10.0f;
-	wobble -= std::floor(wobble);
-
-	hip->rotation = hip_base_rotation * glm::angleAxis(
-		glm::radians(5.0f * std::sin(wobble * 2.0f * float(M_PI))),
-		glm::vec3(0.0f, 1.0f, 0.0f)
-	);
-	upper_leg->rotation = upper_leg_base_rotation * glm::angleAxis(
-		glm::radians(7.0f * std::sin(wobble * 2.0f * 2.0f * float(M_PI))),
-		glm::vec3(0.0f, 0.0f, 1.0f)
-	);
-	lower_leg->rotation = lower_leg_base_rotation * glm::angleAxis(
-		glm::radians(10.0f * std::sin(wobble * 3.0f * 2.0f * float(M_PI))),
-		glm::vec3(0.0f, 0.0f, 1.0f)
-	);
-
-	//move camera:
+void PlayMode::update(float elapsed)
+{
+	if (space.pressed)
 	{
-
-		//combine inputs into a move:
-		constexpr float PlayerSpeed = 30.0f;
-		glm::vec2 move = glm::vec2(0.0f);
-		if (left.pressed && !right.pressed) move.x =-1.0f;
-		if (!left.pressed && right.pressed) move.x = 1.0f;
-		if (down.pressed && !up.pressed) move.y =-1.0f;
-		if (!down.pressed && up.pressed) move.y = 1.0f;
-
-		//make it so that moving diagonally doesn't go faster:
-		if (move != glm::vec2(0.0f)) move = glm::normalize(move) * PlayerSpeed * elapsed;
-
-		glm::mat4x3 frame = camera->transform->make_parent_from_local();
-		glm::vec3 frame_right = frame[0];
-		//glm::vec3 up = frame[1];
-		glm::vec3 frame_forward = -frame[2];
-
-		camera->transform->position += move.x * frame_right + move.y * frame_forward;
+		float grow_distance = 4.0f;
+		for (auto &transform : scene.transforms)
+		{
+			if (transform.name.find("flower") != std::string::npos)
+			{
+				float dist = glm::distance(transform.position, bird_root->position);
+				if (dist < grow_distance)
+				{
+					transform.scale = glm::vec3(2.f, 2.f, 1.2f); // grow flower
+				}
+			}
+		}
 	}
 
-	//reset button press counters:
-	left.downs = 0;
-	right.downs = 0;
-	up.downs = 0;
-	down.downs = 0;
+	// animate wings
+	if (left.pressed || right.pressed || up.pressed || down.pressed)
+	{
+		curr_phase += elapsed * 2.0f;
+		float amt = 0.6f * std::sin(curr_phase * float(M_PI));
+		wing_left->rotation = wing_left_rotation * glm::angleAxis(+amt, glm::vec3(0, 1, 0));
+		wing_right->rotation = wing_right_rotation * glm::angleAxis(-amt, glm::vec3(0, 1, 0));
+		wing_left->rotation = glm::normalize(wing_left->rotation);
+		wing_right->rotation = glm::normalize(wing_right->rotation);
+	}
+
+	{
+		static float rotation = 0.0f;
+		float amt = 0.0f;
+		if (left.pressed && !right.pressed)
+			amt += 1.0f;
+		if (!left.pressed && right.pressed)
+			amt -= 1.0f;
+		rotation += amt * 1.8f * elapsed;
+		bird_root->rotation = glm::angleAxis(rotation, glm::vec3(0, 0, 1));
+		amt = 0.0f;
+		if (up.pressed && !down.pressed)
+			amt = +1.0f;
+		else if (!up.pressed && down.pressed)
+			amt = -1.0f;
+		bird_root->position += bird_root->rotation * glm::vec3(0, -1, 0) * (amt * 5.0f * elapsed);
+		bird_root->position.z = -2.0f; // Keep bird slightly above ground
+	}
+
+	// Set camera to follow bird
+	{
+		const glm::vec3 camera_offset(0.0f, +23.0f, +8.0f); // behind & above
+		camera->transform->position = bird_root->position + bird_root->rotation * camera_offset;
+		camera->transform->rotation = glm::quat_cast(glm::inverse(glm::lookAt(camera->transform->position, bird_root->position, glm::vec3(0, 0, 1))));
+	}
 }
 
-void PlayMode::draw(glm::uvec2 const &drawable_size) {
-	//update camera aspect ratio for drawable:
+void PlayMode::draw(glm::uvec2 const &drawable_size)
+{
+	// update camera aspect ratio for drawable:
 	camera->aspect = float(drawable_size.x) / float(drawable_size.y);
-
-	//set up light type and position for lit_color_texture_program:
 	// TODO: consider using the Light(s) in the scene to do this
 	glUseProgram(lit_color_texture_program->program);
 	glUniform1i(lit_color_texture_program->LIGHT_TYPE_int, 1);
-	glUniform3fv(lit_color_texture_program->LIGHT_DIRECTION_vec3, 1, glm::value_ptr(glm::vec3(0.0f, 0.0f,-1.0f)));
+	glUniform3fv(lit_color_texture_program->LIGHT_DIRECTION_vec3, 1, glm::value_ptr(glm::vec3(0.0f, 0.0f, -1.0f)));
 	glUniform3fv(lit_color_texture_program->LIGHT_ENERGY_vec3, 1, glm::value_ptr(glm::vec3(1.0f, 1.0f, 0.95f)));
 	glUseProgram(0);
-
 	glClearColor(0.5f, 0.5f, 0.5f, 1.0f);
-	glClearDepth(1.0f); //1.0 is actually the default value to clear the depth buffer to, but FYI you can change it.
+	glClearDepth(1.0f);
+	// 1.0 is actually the default value to clear the depth buffer to, but FYI you can change it.
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
 	glEnable(GL_DEPTH_TEST);
-	glDepthFunc(GL_LESS); //this is the default depth comparison function, but FYI you can change it.
-
-	GL_ERRORS(); //print any errors produced by this setup code
-
+	glDepthFunc(GL_LESS);
+	// this is the default depth comparison function, but FYI you can change it.
+	GL_ERRORS(); // print any errors produced by this setup code
 	scene.draw(*camera);
 
-	{ //use DrawLines to overlay some text:
+	{ // use DrawLines to overlay some text:
 		glDisable(GL_DEPTH_TEST);
 		float aspect = float(drawable_size.x) / float(drawable_size.y);
 		DrawLines lines(glm::mat4(
 			1.0f / aspect, 0.0f, 0.0f, 0.0f,
 			0.0f, 1.0f, 0.0f, 0.0f,
 			0.0f, 0.0f, 1.0f, 0.0f,
-			0.0f, 0.0f, 0.0f, 1.0f
-		));
+			0.0f, 0.0f, 0.0f, 1.0f));
 
 		constexpr float H = 0.09f;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
-			glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
-			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-			glm::u8vec4(0x00, 0x00, 0x00, 0x00));
+		lines.draw_text("Use WASD to move bird, press space to pollinate nearby flowers!",
+						glm::vec3(-aspect + 0.1f * H, -1.0 + 0.1f * H, 0.0),
+						glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+						glm::u8vec4(0x00, 0x00, 0x00, 0x00));
 		float ofs = 2.0f / drawable_size.y;
-		lines.draw_text("Mouse motion rotates camera; WASD moves; escape ungrabs mouse",
-			glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + 0.1f * H + ofs, 0.0),
-			glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
-			glm::u8vec4(0xff, 0xff, 0xff, 0x00));
+		lines.draw_text("Use WASD to move bird, press space to pollinate nearby flowers!",
+						glm::vec3(-aspect + 0.1f * H + ofs, -1.0 + 0.1f * H + ofs, 0.0),
+						glm::vec3(H, 0.0f, 0.0f), glm::vec3(0.0f, H, 0.0f),
+						glm::u8vec4(0xff, 0xff, 0xff, 0x00));
 	}
 }

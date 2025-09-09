@@ -1,15 +1,18 @@
-# (TODO: your game's title)
+# Pollination Journey 🌸
 
-Author: (TODO: your name)
+Author: Fara Yan (fayan)
 
-Design: (TODO: In two sentences or fewer, describe what is new and interesting about your game.)
-
-Screen Shot:
+### Design
+In this game, navigate Fauna the sunbird through the garden. Your mission is to pollinate flowers to help them bloom and make the garen thrive. Happy pollinating!
 
 ![Screen Shot](screenshot.png)
 
-How To Play:
+### How To Play
 
-(TODO: describe the controls and (if needed) goals/strategy.)
+* Use  A / D to turn Fauna left or right, and W / S to move forward or backward.
+
+* When you’re near flowers, press space to pollinate them. Successfully pollinated flowers will bloom and grow larger!
+
+Your goal is to pollinate all flowers to bring your ecosystem to life :)
 
 This game was built with [NEST](NEST.md).
